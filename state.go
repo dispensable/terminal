@@ -98,6 +98,11 @@ type State struct {
 	numlock       bool
 	tabs          []bool
 	title         string
+	RecordHistory bool
+	history       []line
+	HistoryMax    int
+	ScrollMode    bool
+	ScrollOffset  int
 }
 
 func (t *State) logf(format string, args ...interface{}) {
@@ -131,9 +136,58 @@ func (t *State) Unlock() {
 	t.mu.Unlock()
 }
 
+func (t *State) SetScrollMode(status bool) {
+	t.ScrollMode = status
+	if !status {
+		t.ScrollOffset = 0
+	}
+}
+
+func (t *State) SetScrollOffset(offset int) {
+	t.Lock()
+	defer t.Unlock()
+
+	newOffset := t.ScrollOffset + offset
+
+	if newOffset > len(t.history) {
+		t.ScrollOffset = len(t.history)
+	} else {
+		if newOffset < 0 {
+			t.ScrollOffset = 0
+		} else {
+			t.ScrollOffset = newOffset
+		}
+	}
+}
+
 // Cell returns the character code, foreground color, and background
 // color at position (x, y) relative to the top left of the terminal.
 func (t *State) Cell(x, y int) (ch rune, fg Color, bg Color) {
+	if t.RecordHistory && t.ScrollMode && t.ScrollOffset != 0 {
+		// |----history------|------ now ------ |
+		//    ^--- offset ---|
+		// locate the offset idx of the first row user should see
+		historyIdx := len(t.history) - t.ScrollOffset
+		if t.ScrollOffset >= t.HistoryMax {
+			t.ScrollOffset = t.HistoryMax
+			historyIdx = 0
+		}
+
+		if t.ScrollOffset > len(t.history) {
+			historyIdx = 0
+		}
+
+		offset := t.ScrollOffset
+		// t.logf("need y: %d = offset: %d = his idex: %d", y, offset, historyIdx)
+		if y >= offset {
+			// t.logf("> go to original lines: %d | total: %d", y-offset, len(t.lines))
+			return t.lines[y-offset][x].c, Color(t.lines[y-offset][x].fg), Color(t.lines[y][x].bg)
+		} else {
+			// t.logf("+ goto history: %d, total: %d", y + historyIdx, len(t.history))
+			return t.history[y+historyIdx][x].c, Color(t.history[y+historyIdx][x].fg), Color(t.history[y+historyIdx][x].bg)
+		}
+		
+	}
 	return t.lines[y][x].c, Color(t.lines[y][x].fg), Color(t.lines[y][x].bg)
 }
 
@@ -457,6 +511,17 @@ func (t *State) ScrollDown(orig, n int) {
 
 func (t *State) ScrollUp(orig, n int) {
 	n = clamp(n, 0, t.bottom-orig+1)
+
+	if t.RecordHistory && orig == t.top {
+		for i := orig; i < orig+n; i++ {
+			l := make([]glyph, len(t.lines[i]))
+			copy(l, t.lines[i])
+			t.history = append(t.history, l)
+			if len(t.history) > t.HistoryMax {
+				t.history = t.history[1:]
+			}
+		}
+	}
 	t.clear(0, orig, t.cols-1, orig+n-1)
 	t.changed |= ChangedScreen
 	for i := orig; i <= t.bottom-n; i++ {

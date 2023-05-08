@@ -57,6 +57,8 @@ func (t *VT) init() {
 	t.dest.state = t.dest.parse
 	t.dest.cur.attr.fg = DefaultFG
 	t.dest.cur.attr.bg = DefaultBG
+	t.dest.RecordHistory = true
+	t.dest.HistoryMax = 2000
 	t.Resize(80, 24)
 	t.dest.reset()
 }

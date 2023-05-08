@@ -1,5 +1,9 @@
 package terminal
 
+import (
+	runewidth "github.com/mattn/go-runewidth"
+)
+
 func isControlCode(c rune) bool {
 	return c < 0x20 || c == 0177
 }
@@ -23,8 +27,15 @@ func (t *State) parse(c rune) {
 	}
 
 	t.setChar(c, &t.cur.attr, t.cur.x, t.cur.y)
-	if t.cur.x+1 < t.cols {
-		t.moveTo(t.cur.x+1, t.cur.y)
+
+	var incr int = 1
+	if runewidth.RuneWidth(c) >= 2 {
+		incr = 2
+		t.setChar(0, &t.cur.attr, t.cur.x+1, t.cur.y)
+	}
+
+	if t.cur.x+incr < t.cols {
+		t.moveTo(t.cur.x+incr, t.cur.y)
 	} else {
 		t.cur.state |= cursorWrapNext
 	}
